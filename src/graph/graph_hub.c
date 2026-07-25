@@ -256,6 +256,30 @@ void GraphHub_DeleteEdges
 		return ;
 	}
 
+	// hydra2 (usecortex): skip non-modifiable edges before recording their deletion.
+	// A DETACH DELETE gathers a node's implicit incident edges via
+	// Graph_CollectInOutEdges; an already-deleted / stale incident edge has a NULL
+	// attribute-set, and UndoLog_DeleteEdge dereferences it
+	// (op.delete_edge_op.set = *edge->attributes) -> SIGSEGV. This reproduces on AOF
+	// replay of such a DETACH DELETE (prod tenant crashloop) — the hydra1
+	// _CollectDeletedEntities guard did not cover it because implicit incident edges
+	// bypass that collection. Compact the array so the undo-log, effects buffer,
+	// indexes and Graph_DeleteEdges only ever see live edges. Extends the hydra1
+	// GraphEntity_CanModify guard to the implicit-edge deletion path.
+	uint64_t live = 0 ;
+	for (uint64_t i = 0; i < n; i++) {
+		if (GraphEntity_CanModify ((const GraphEntity *)(edges + i))) {
+			if (live != i) {
+				edges[live] = edges[i] ;
+			}
+			live++ ;
+		}
+	}
+	n = live ;
+	if (n == 0) {
+		return ;
+	}
+
 	// add edge deletion operation to undo log
 	bool has_indices = GraphContext_HasIndices (gc) ;
 
