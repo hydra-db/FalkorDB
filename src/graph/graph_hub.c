@@ -357,6 +357,15 @@ void GraphHub_UpdateNodeProperty
 	int res = Graph_GetNode (g, id, &n) ;
 	ASSERT(res == true);  // make sure entity was found
 
+	// guard: skip stale / already-deleted node (v4.18.6-hydra3) — symmetric to the edge
+	// guard; an update-node-property effect can target a node whose attribute-set was freed
+	// (n.attributes == NULL) or datablock-deleted; AttributeSet_Free / AttributeSet_Update
+	// dereference it (`AttributeSet _set = *set`) and NULL-deref -> SIGSEGV on effect apply.
+	// treat the effect as a no-op, mirroring upstream #2232's _Graph_EntityIsDeleted precheck.
+	if (n.attributes == NULL || DataBlock_ItemIsDeleted (n.attributes)) {
+		return;
+	}
+
 	if(attr_id == ATTRIBUTE_ID_ALL) {
 		AttributeSet_Free(n.attributes);
 	} else {
@@ -406,6 +415,18 @@ void GraphHub_UpdateEdgeProperty
 	// get src node, dest node and edge from the graph
 	int res = Graph_GetEdge (GraphContext_GetGraph (gc), id, &e);
 	ASSERT(res != 0);
+
+	// guard: skip stale / already-deleted edge (v4.18.6-hydra3)
+	// an update-edge-property effect can target an edge whose attribute-set
+	// slot was already freed (e.attributes == NULL) or marked deleted in the
+	// datablock. AttributeSet_Free / AttributeSet_Update dereference it
+	// (`AttributeSet _set = *set`) and NULL-deref -> SIGSEGV on effect apply
+	// (prod m2l-0 crash). treat the effect as a no-op, mirroring upstream
+	// #2232's _Graph_EntityIsDeleted precheck (attributes NULL || datablock
+	// item deleted).
+	if (e.attributes == NULL || DataBlock_ItemIsDeleted (e.attributes)) {
+		return;
+	}
 
 	// set edge relation, src and destination node
 	Edge_SetRelationID(&e, r_id);
