@@ -507,15 +507,24 @@ static void ApplyDeleteNode
 		// read node ID off of stream
 		fread_assert (&n->id, sizeof(EntityID), stream) ;
 
-		// debug assert node exists
-		ASSERT (Graph_GetNode (g, n->id, nodes + i)) ;
+		// hydra4 (usecortex): symmetric to the delete-edge fix below. Graph_GetNode
+		// populates n->attributes and MUST run in release builds; it was the argument of
+		// ASSERT() (compiled out in release, src/RG.h), leaving n->attributes
+		// uninitialized. GraphHub_DeleteNodes does not currently dereference it, so this
+		// is defensive (no known crash) — but it removes the same side-effect-in-assert
+		// defect and fully materializes the node before deletion. Skip a node already
+		// gone on this instance.
+		bool found = Graph_GetNode (g, n->id, n) ;
+		ASSERT (found == true) ;
 
-		i++ ;
+		if (found) {
+			i++ ;
 
-		if (i == batch_size) {
-			// flush batch
-			GraphHub_DeleteNodes (gc, nodes, i, false) ;
-			i = 0 ;
+			if (i == batch_size) {
+				// flush batch
+				GraphHub_DeleteNodes (gc, nodes, i, false) ;
+				i = 0 ;
+			}
 		}
 
 		// have we reached the end of the stream ?
@@ -576,22 +585,32 @@ static void ApplyDeleteEdge
 
 		Edge *e = edges + i ;
 
-		// debug assert edge exists
-		ASSERT (Graph_GetEdge (g, _edge_desc.id, edges + i) == true) ;
+		// hydra4 (usecortex): Graph_GetEdge populates e->attributes and MUST run in
+		// release builds. It was previously the argument of ASSERT(), which expands to
+		// nothing in release (src/RG.h) — so Graph_GetEdge never ran and e->attributes
+		// was left as uninitialized stack garbage. The hydra2 GraphEntity_CanModify
+		// compaction loop in GraphHub_DeleteEdges then dereferences it via
+		// DataBlock_ItemIsDeleted -> SIGSEGV on delete-edge effect apply (prod
+		// falkordb-hydradb-prod replica crashloop, PRO-1509). Call it for real and skip
+		// any edge already gone on this instance (idempotent apply).
+		bool found = Graph_GetEdge (g, _edge_desc.id, e) ;
+		ASSERT (found == true) ;
 
-		// set edge relation, src and destination node
-		e->id         = _edge_desc.id      ;
-		e->src_id     = _edge_desc.src_id  ;
-		e->dest_id    = _edge_desc.dest_id ;
-		e->relationID = _edge_desc.r       ;
+		if (found) {
+			// set edge relation, src and destination node
+			e->id         = _edge_desc.id      ;
+			e->src_id     = _edge_desc.src_id  ;
+			e->dest_id    = _edge_desc.dest_id ;
+			e->relationID = _edge_desc.r       ;
 
-		i++ ;
+			i++ ;
 
-		// check if batch is full
-		if (i == batch_size) {
-			// flush batch
-			GraphHub_DeleteEdges (gc, edges, i, false, false) ;
-			i = 0 ;
+			// check if batch is full
+			if (i == batch_size) {
+				// flush batch
+				GraphHub_DeleteEdges (gc, edges, i, false, false) ;
+				i = 0 ;
+			}
 		}
 
 		// have we reached the end of the stream ?
