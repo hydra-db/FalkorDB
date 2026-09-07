@@ -263,6 +263,21 @@ void RdbLoadRelationMatrices_v19
 	for (int i = 0; i < n; i++) {
 		// read relation ID
 		RelationID r = SerializerIO_ReadUnsigned (rdb) ;
+
+		// TOLERANT(hydra5): recover RDBs/AOFs written by hydra<=4 that carry the
+		// tensor-encoding desync (see the matching FIX in encode_matrix.c). A
+		// relation whose multi-edge indicator was spuriously true but had zero
+		// live tensors was serialized with 2 stray trailing zero counts; those
+		// stray zeros surface here as a bogus relation id. Relation ids are the
+		// strictly increasing sequence 0..N-1, so a value that isn't the
+		// expected index i means we just consumed a stray count -> skip stray
+		// zeros until the real id appears. Only zero-valued strays are the
+		// known-recoverable pattern; any other mismatch is genuine corruption
+		// we must NOT silently skip, so assert on it.
+		while (r != i) {
+			RedisModule_Assert (r == 0) ;
+			r = SerializerIO_ReadUnsigned (rdb) ;
+		}
 		ASSERT (r == i) ;
 
 		// plant M matrix

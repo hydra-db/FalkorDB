@@ -114,7 +114,22 @@ static void _EncodeTensors
 	ASSERT (info == GrB_SUCCESS) ;
 
 	GrB_Index nvals = tm_nvals + tdp_nvals ;
-	ASSERT (nvals > 0) ;
+
+	// FIX(hydra5): a relation's multi-edge indicator
+	// (Graph_RelationshipContainsMultiEdge) is derived from
+	// nvals(R) != edge-count, an invariant that stale/deleted-edge state can
+	// break -> the indicator reads true while _ExtractTensors extracts ZERO
+	// live tensors here (TM/TDP are non-NULL but empty). Previously this path
+	// still ran the per-matrix loop below and emitted 3 unsigned values
+	// (total=0, M=0, DP=0), whereas _DecodeTensors reads only the total and
+	// early-returns on 0 -> a 2-value stream desync that later detonates at
+	// serializer_io.c:513 (BufferSerializer ReadBuffer: unexpected type 4).
+	// Encode the no-tensor case exactly like the NULL branch (a single 0) so
+	// it round-trips with the decoder.
+	if (nvals == 0) {
+		SerializerIO_WriteUnsigned (rdb, 0) ;
+		return ;
+	}
 
 	// encode number of tensors in matrix R
 	SerializerIO_WriteUnsigned (rdb, nvals) ;
