@@ -441,6 +441,44 @@ void *BufferSerializerIOv2_ReadBuffer
 	uint8_t info_type ;
 	SERIALIZER_READ_TYPE (info_type) ;
 
+	// TOLERANT(hydra5): recover RDBs/AOFs carrying the hydra<=4 tensor-encoding
+	// desync (see encode_matrix.c _EncodeTensors + the matching skip in
+	// RdbLoadRelationMatrices_v19). A relation whose multi-edge indicator was
+	// spuriously true but held zero live tensors was serialized with 2 stray
+	// trailing UNSIGNED zero counts (total=0, M=0, DP=0 where the decoder reads
+	// only total). When the *last* relation is the poisoned one, those strays
+	// have no following relation-id read to absorb them (the relation loop only
+	// skips strays *between* relations) and surface right here, in front of the
+	// adjacency/label matrix container read -> ReadBuffer sees type UNSIGNED (4)
+	// where it expects BYTES/BLOB and asserts at :513. Skip leading stray
+	// UNSIGNED zeros until the real buffer type appears. Only zero-valued strays
+	// are the known-recoverable pattern; a non-zero UNSIGNED (or a truncated
+	// stream) is genuine corruption and must NOT be silently skipped.
+	while (info_type == SERIALIZER_TYPE_UNSIGNED) {
+		// the encoder writes a value's type + payload contiguously, so the
+		// 8-byte stray payload is guaranteed present in the current chunk
+		if ((buffer->cap - buffer->count) < sizeof (uint64_t)) {
+			RedisModule_Log (NULL, "warning",
+				"BufferSerializer ReadBuffer: truncated stray unsigned "
+				"(remaining: %zu)", (size_t) (buffer->cap - buffer->count)) ;
+			RedisModule_Assert (false) ;
+		}
+		uint64_t stray = *(uint64_t*) (buffer->buffer + buffer->count) ;
+		RedisModule_Assert (stray == 0) ;
+		buffer->count += sizeof (uint64_t) ;
+
+		// the next value's type byte may live in the following chunk
+		if (buffer->count == buffer->cap) {
+			_load_buffer (buffer) ;
+		}
+		if (buffer->count >= buffer->cap) {
+			RedisModule_Log (NULL, "warning",
+				"BufferSerializer ReadBuffer: no bytes for type after stray") ;
+			RedisModule_Assert (false) ;
+		}
+		SERIALIZER_READ_TYPE (info_type) ;
+	}
+
 	void *ret = NULL ;
 
 	// large string stand on their own
