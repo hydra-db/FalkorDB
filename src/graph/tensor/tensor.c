@@ -581,11 +581,24 @@ void Tensor_RemoveElements
 		}
 
 		// check tensor at T[row,col]
-		uint64_t _x;
+		uint64_t _x = 0;
 		info = Delta_Matrix_extractElement_UINT64(&_x, T, row, col);
-		ASSERT(info != GrB_NO_VALUE);
 
 		uint64_t d = j - i;  // number of consecutive elements
+
+		// FIX(hydra6): tolerate an already-removed entry. When a replica REPLAYS a
+		// delete-connections effect (Graph_Effect -> Effects_Apply ->
+		// Graph_ClearConnections) for edges that are already gone, the entry at
+		// T[row,col] is either absent (GrB_NO_VALUE, which leaves _x uninitialized)
+		// or a delete-marker (MSB set with a NULL vector payload). The release build
+		// compiles out the old ASSERT(info != GrB_NO_VALUE), so the code fell through
+		// and dereferenced garbage/NULL as a GrB_Vector -> SIGSEGV in GrB_Vector_nvals
+		// (the prod m2l/j8b delete-effect crashloop, edge analog of FalkorDB#2049).
+		// Deleting an already-gone edge is a no-op, so skip these consecutive elements.
+		if(info == GrB_NO_VALUE || (!SCALAR_ENTRY(_x) && CLEAR_MSB(_x) == 0)) {
+			i = j;
+			continue;
+		}
 
 		// expecting entry to exists
 		if(SCALAR_ENTRY(_x)) {
