@@ -752,6 +752,10 @@ void Tensor_ClearElements
 	GrB_OK (GxB_Scalar_setElement_BOOL (s, true)) ;
 
 	GrB_OK (GrB_Matrix_select_Scalar (C, A, NULL, op, M,  s, NULL)) ;
+	// FIX(hydra7): remember the M-resident vector entries (C before DP is added)
+	// so their raw M slots can be neutralized after their payloads are freed below.
+	GrB_Matrix CM = NULL ;
+	GrB_OK (GrB_Matrix_dup (&CM, C)) ;
 	GrB_OK (GrB_Matrix_select_Scalar (C, A, NULL, op, DP, s, NULL)) ;
 	GrB_OK (GrB_Matrix_nvals (&nvals, C)) ;
 
@@ -770,6 +774,17 @@ void Tensor_ClearElements
 		GrB_OK (GrB_free (&unaryop)) ;
 	}
 
+	// FIX(hydra7): _free_vectors freed the GrB_Vector payloads, but the M entries
+	// are only delta-minus-masked below -- their raw slots in M still hold the
+	// now-freed pointers. If any later read reaches M past that mask
+	// (Tensor_RemoveElements -> AS_VECTOR -> GrB_Vector_nvals) it is a read of
+	// freed memory (the prod m2l/j8b delete-effect crash). Overwrite those M
+	// slots with a delete-marker (MSB set, NULL vector payload) so a read-back is
+	// a skippable marker (see the guard in Tensor_RemoveElements) rather than a
+	// dangling pointer. Masked by CM's structure, so only the freed slots change.
+	GrB_OK (GrB_Matrix_assign_UINT64 (M, CM, NULL, (uint64_t) MSB_MASK,
+				GrB_ALL, 0, GrB_ALL, 0, GrB_DESC_S)) ;
+
 	// set deleted elements from M in DM
 	GrB_OK (GrB_Matrix_eWiseMult_BinaryOp (DM, A, NULL, GrB_ONEB_BOOL, M, A,
 				GrB_DESC_S)) ;
@@ -782,6 +797,7 @@ void Tensor_ClearElements
 	// clean up
 	GrB_OK (GrB_free (&s)) ;
 	GrB_OK (GrB_free (&C)) ;
+	GrB_OK (GrB_free (&CM)) ;
 	GrB_OK (GrB_free (&op)) ;
 }
 

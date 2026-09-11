@@ -2,13 +2,13 @@ name: Publish Hydra FalkorDB image to ECR
 
 on:
   push:
-    branches: [master, v4.18.6-hydra1, v4.18.6-hydra2, v4.18.6-hydra3, v4.18.6-hydra4, v4.18.6-hydra5, v4.18.6-hydra6]
+    branches: [master, v4.18.6-hydra1, v4.18.6-hydra2, v4.18.6-hydra3, v4.18.6-hydra4, v4.18.6-hydra5, v4.18.6-hydra6, v4.18.6-hydra7]
   workflow_dispatch:
 
 env:
   AWS_REGION: us-east-1
   ECR_REPOSITORY: falkordb/falkordb
-  IMAGE_TAG: v4.18.6-hydra6
+  IMAGE_TAG: v4.18.6-hydra7
 
 jobs:
   build-and-push:
