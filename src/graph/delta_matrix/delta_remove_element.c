@@ -8,7 +8,6 @@
 #include "delta_utils.h"
 #include "../../util/arr.h"
 #include "../../util/rmalloc.h"
-#include "../../globals.h"
 
 // remove entry at position C[i,j]
 GrB_Info Delta_Matrix_removeElement

@@ -56,10 +56,15 @@ struct Graph {
 	Tensor *relations;                 // relation matrices
 	Delta_Matrix _zero_matrix;         // zero matrix
 	pthread_rwlock_t _rwlock;          // read-write lock scoped to this specific graph
+	bool edge_refs_validated;          // atomic validation flag; not serialized
 	bool _writelocked;                 // true if the read-write lock was acquired by a writer
 	SyncMatrixFunc SynchronizeMatrix;  // function pointer to matrix synchronization routine
 	GraphStatistics stats;             // graph related statistics
 };
+
+// Readers invalidate this flag on missing slots; writers repair before reuse.
+void Graph_MarkEdgeRefsInvalid(const Graph *g);
+uint64_t Graph_RepairDanglingEdges(Graph *g);
 
 // graph synchronization functions
 // the graph is initialized with a read-write lock allowing
