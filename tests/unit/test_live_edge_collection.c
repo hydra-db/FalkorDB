@@ -33,6 +33,8 @@ bool Config_Option_get(Config_Option_Field field, ...) {
 }
 #endif
 
+static uint64_t sync_calls;
+
 // The fixture deliberately bypasses Graph_DeleteEdges: its tensor still names
 // a freed slot, exactly the inconsistent state observed in production. Keep
 // real DataBlock storage and real scalar/vector Tensor entries in every test.
@@ -43,6 +45,7 @@ static bool synchronize
 	GrB_Index rows,
 	GrB_Index cols
 ) {
+	sync_calls++;
 	return Delta_Matrix_wait(matrix, true) == GrB_SUCCESS;
 }
 
@@ -312,9 +315,14 @@ static void test_healthy_delete_create_keeps_validation_cached(void) {
 		.attributes=DataBlock_GetItem(g->edges, 2)};
 	Graph_DeleteEdges(g, &existing, 1, false);
 	TEST_ASSERT(g->edge_refs_validated);
+	// Deletion has finished its policy transitions. Instrument allocation's
+	// matrix accesses now: a sweep would visit the 100 extra relations.
+	g->SynchronizeMatrix = synchronize;
+	uint64_t before = sync_calls;
 	Edge created = {0};
 	Graph_CreateEdge(g, 2, 0, 0, &created);
 	TEST_ASSERT(g->edge_refs_validated);
+	TEST_ASSERT(sync_calls - before < 10);
 	unlock_fixture(g);
 	destroy_fixture(g);
 }
