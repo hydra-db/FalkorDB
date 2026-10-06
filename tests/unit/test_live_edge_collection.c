@@ -27,6 +27,8 @@ bool Config_Option_get(Config_Option_Field field, ...) {
 }
 #endif
 
+static uint64_t sync_calls;
+
 // The fixture deliberately bypasses Graph_DeleteEdges: its tensor still names
 // a freed slot, exactly the inconsistent state observed in production. Keep
 // real DataBlock storage and real scalar/vector Tensor entries in every test.
@@ -37,6 +39,7 @@ static bool synchronize
 	GrB_Index rows,
 	GrB_Index cols
 ) {
+	sync_calls++;
 	return Delta_Matrix_wait(matrix, true) == GrB_SUCCESS;
 }
 
@@ -97,7 +100,7 @@ static void destroy_fixture
 	Delta_Matrix_free(&g->adjacency_matrix);
 	arr_free(g->stats.edge_count);
 	pthread_rwlock_destroy(&g->_rwlock);
-	Tensor_free(&g->relations[0]);
+	for(uint r = 0; r < arr_len(g->relations); r++) Tensor_free(&g->relations[r]);
 	arr_free(g->relations);
 	DataBlock_Free(g->edges);
 	DataBlock_Free(g->nodes);
@@ -275,7 +278,28 @@ static void test_repair_preserves_other_relation_union(void) {
 	TEST_ASSERT(g->stats.edge_count[1] == 1);
 	unlock_fixture(g);
 	arr_free(edges);
-	Tensor_free(&g->relations[1]);
+	destroy_fixture(g);
+}
+
+static void test_healthy_delete_create_keeps_validation_cached(void) {
+	Graph *g = fixture(false);
+	// Many empty relations make an accidental full validation sweep observable
+	// without a machine-dependent timing threshold.
+	for(uint r = 0; r < 100; r++) {
+		arr_append(g->relations, Tensor_new(16, 16));
+		arr_append(g->stats.edge_count, 0);
+	}
+	Graph_AcquireWriteLock(g);
+	TEST_ASSERT(Graph_RepairDanglingEdges(g) == 2);
+	Edge existing = {.id=2, .src_id=1, .dest_id=2, .relationID=0,
+		.attributes=DataBlock_GetItem(g->edges, 2)};
+	Graph_DeleteEdges(g, &existing, 1, false);
+	TEST_ASSERT(g->edge_refs_validated);
+	uint64_t before = sync_calls;
+	Edge created = {0};
+	Graph_CreateEdge(g, 2, 0, 0, &created);
+	TEST_ASSERT(sync_calls - before < 10);
+	unlock_fixture(g);
 	destroy_fixture(g);
 }
 
@@ -288,5 +312,6 @@ TEST_LIST = {
 	{"repairPreventsReusedSlotAlias", test_repair_prevents_reused_slot_alias},
 	{"parallelRepairKeepsPropertylessScalar", test_parallel_repair_keeps_propertyless_scalar},
 	{"repairPreservesOtherRelationUnion", test_repair_preserves_other_relation_union},
+	{"healthyDeleteCreateKeepsValidationCached", test_healthy_delete_create_keeps_validation_cached},
 	{NULL, NULL}
 };

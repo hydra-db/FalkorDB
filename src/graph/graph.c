@@ -1126,8 +1126,6 @@ void Graph_DeleteEdges
 	ASSERT (g     != NULL) ;
 	ASSERT (edges != NULL) ;
 
-	Graph_MarkEdgeRefsInvalid(g);
-
 	for (uint64_t i = 0; i < n; i++) {
 		Edge *e = edges + i;
 
