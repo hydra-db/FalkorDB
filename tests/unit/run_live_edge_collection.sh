@@ -34,7 +34,7 @@ for edge_source in src/graph/delta_matrix/*.c; do
     case "$edge_source" in
         # These write-only translation units need the generated Cypher parser
         # headers. No function in them is used by this focused collector test.
-        */delta_remove_row.c|*/delta_remove_element.c) continue ;;
+        */delta_remove_row.c) continue ;;
     esac
     edge_delta_sources+=("$edge_source")
 done
@@ -42,7 +42,7 @@ done
 "$edge_cc" "${edge_compile_flags[@]}" \
     -I. -Isrc -Ideps -Ideps/rax -Ideps/xxHash -Ideps/GraphBLAS/Include \
     tests/unit/test_live_edge_collection.c \
-    src/graph/graph.c src/graph/graph_collect_node_edges.c \
+    src/graph/graph.c src/graph/graph_collect_node_edges.c src/graph/entities/edge.c \
     src/graph/tensor/*.c "${edge_delta_sources[@]}" \
     src/util/datablock/*.c src/util/block.c \
     -L"$edge_graphblas_dir" -lgraphblas "${edge_link_flags[@]}" \

@@ -99,6 +99,8 @@ void Graph_CollectInOutEdges
 
 				if (e.attributes != NULL) {
 					arr_append (*outgoing, e) ;
+				} else {
+					Graph_MarkEdgeRefsInvalid(g);
 				}
 			}
 
@@ -121,6 +123,8 @@ void Graph_CollectInOutEdges
 
 					if (e.attributes != NULL) {
 						arr_append (*outgoing, e) ;
+					} else {
+						Graph_MarkEdgeRefsInvalid(g);
 					}
 
 					// move to the next entry in v
@@ -168,6 +172,8 @@ void Graph_CollectInOutEdges
 
 				if (e.attributes != NULL) {
 					arr_append (*incoming, e) ;
+				} else {
+					Graph_MarkEdgeRefsInvalid(g);
 				}
 			}
 			
@@ -190,6 +196,8 @@ void Graph_CollectInOutEdges
 
 					if (e.attributes != NULL) {
 						arr_append (*incoming, e) ;
+					} else {
+						Graph_MarkEdgeRefsInvalid(g);
 					}
 
 					// move to the next entry in v
@@ -290,6 +298,8 @@ void Graph_CollectOutgoingEdges
 
 				if (e.attributes != NULL) {
 					arr_append (*edges, e) ;
+				} else {
+					Graph_MarkEdgeRefsInvalid(g);
 				}
 			}
 
@@ -312,6 +322,8 @@ void Graph_CollectOutgoingEdges
 
 					if (e.attributes != NULL) {
 						arr_append (*edges, e) ;
+					} else {
+						Graph_MarkEdgeRefsInvalid(g);
 					}
 
 					// move to the next entry in v
@@ -412,6 +424,8 @@ void Graph_CollectIncomingEdges
 
 				if (e.attributes != NULL) {
 					arr_append (*edges, e) ;
+				} else {
+					Graph_MarkEdgeRefsInvalid(g);
 				}
 			}
 			
@@ -434,6 +448,8 @@ void Graph_CollectIncomingEdges
 
 					if (e.attributes != NULL) {
 						arr_append (*edges, e) ;
+					} else {
+						Graph_MarkEdgeRefsInvalid(g);
 					}
 
 					// move to the next entry in v

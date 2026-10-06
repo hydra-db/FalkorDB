@@ -169,6 +169,8 @@ static void _Graph_GetEdgesConnectingNodes
 		// A missing slot is not an edge; do not expose it to property reads.
 		if(e.attributes != NULL) {
 			arr_append(*edges, e);
+		} else {
+			Graph_MarkEdgeRefsInvalid(g);
 		}
 	}
 }
@@ -455,6 +457,7 @@ Graph *Graph_New
 	// initialize a read-write lock scoped to the individual graph
 	_CreateRWLock(g);
 	g->_writelocked = false;
+	g->edge_refs_validated = false;
 
 	// force GraphBLAS updates and resize matrices to node count by default
 	g->SynchronizeMatrix = _MatrixSynchronize;
@@ -488,6 +491,8 @@ static void _GetOutgoingNodeEdges
 		// A missing slot is not an edge; do not expose it to property reads.
 		if(e.attributes != NULL) {
 			arr_append(*edges, e);
+		} else {
+			Graph_MarkEdgeRefsInvalid(g);
 		}
 	}
 }
@@ -523,6 +528,8 @@ static void _GetIncomingNodeEdges
 		e.attributes = DataBlock_GetItem (g->edges, e.id) ;
 		if (e.attributes != NULL) {
 			arr_append (*edges, e) ;
+		} else {
+			Graph_MarkEdgeRefsInvalid(g);
 		}
 	}
 }
@@ -882,6 +889,76 @@ void Graph_FormConnection
 	GraphStatistics_IncEdgeCount(&g->stats, r, 1);
 }
 
+// Marking does not mutate tensors and is safe while readers share the lock.
+void Graph_MarkEdgeRefsInvalid(const Graph *g) {
+	__atomic_store_n(&((Graph *)g)->edge_refs_validated, false, __ATOMIC_RELEASE);
+}
+
+// Remove unavailable IDs before any allocator can reuse a freed slot. Repair
+// all relation types together: a stale ID may occur outside the new edge's pair.
+// DataBlock records/free lists and replication edge IDs are left untouched.
+uint64_t Graph_RepairDanglingEdges(Graph *g) {
+	ASSERT(g != NULL);
+	ASSERT(Graph_IsWriteLocked(g));
+	if(__atomic_load_n(&g->edge_refs_validated, __ATOMIC_ACQUIRE)) return 0;
+
+	GrB_Index dim = Graph_RequiredMatrixDim(g);
+	GrB_Matrix live_adj;
+	GrB_OK(GrB_Matrix_new(&live_adj, GrB_BOOL, dim, dim));
+	uint64_t removed = 0;
+	uint relations = Graph_RelationTypeCount(g);
+	uint64_t *counts = rm_calloc(relations, sizeof(uint64_t));
+
+	for(uint r = 0; r < relations; r++) {
+		Tensor matrix = Graph_GetRelationMatrix(g, r, false);
+		Edge *missing = arr_new(Edge, 8);
+		TensorIterator it;
+		if(dim > 0) {
+			TensorIterator_ScanRange(&it, matrix, 0, dim - 1, false);
+			GrB_Index src, dest;
+			EdgeID id;
+			while(TensorIterator_next(&it, &src, &dest, &id, NULL)) {
+				if(DataBlock_GetItem(g->edges, id) == NULL) {
+					Edge edge = {.id=id, .src_id=src, .dest_id=dest, .relationID=r};
+					arr_append(missing, edge);
+				} else {
+					counts[r]++;
+					GrB_OK(GrB_Matrix_setElement_BOOL(live_adj, true, src, dest));
+				}
+			}
+		}
+		if(arr_len(missing) > 0) {
+			removed += arr_len(missing);
+			Tensor_RemoveElements(matrix, missing, arr_len(missing), NULL);
+			GrB_OK(Delta_Matrix_wait(matrix, true));
+		}
+		arr_free(missing);
+	}
+
+	if(removed > 0) {
+		// Rebuild the untyped adjacency union without freeing matrix objects
+		// held by the current execution plan. Other relation types may still
+		// connect a pair whose final stale entry was removed above.
+		Delta_Matrix adj = Graph_GetAdjacencyMatrix(g, false);
+		Delta_Matrix transpose = Delta_Matrix_getTranspose(adj);
+		Delta_Matrix matrices[2] = {adj, transpose};
+		for(uint i = 0; i < 2; i++) {
+			GrB_OK(GrB_Matrix_clear(DELTA_MATRIX_M(matrices[i])));
+			GrB_OK(GrB_Matrix_clear(DELTA_MATRIX_DELTA_PLUS(matrices[i])));
+			GrB_OK(GrB_Matrix_clear(DELTA_MATRIX_DELTA_MINUS(matrices[i])));
+		}
+		GrB_OK(GrB_Matrix_assign(DELTA_MATRIX_M(adj), NULL, NULL, live_adj,
+				GrB_ALL, dim, GrB_ALL, dim, NULL));
+		GrB_OK(GrB_transpose(DELTA_MATRIX_M(transpose), NULL, NULL, live_adj, NULL));
+		GrB_OK(Delta_Matrix_wait(adj, true));
+		for(uint r = 0; r < relations; r++) g->stats.edge_count[r] = counts[r];
+	}
+	GrB_free(&live_adj);
+	rm_free(counts);
+	__atomic_store_n(&g->edge_refs_validated, true, __ATOMIC_RELEASE);
+	return removed;
+}
+
 // connects source node to destination node
 void Graph_CreateEdge
 (
@@ -900,6 +977,8 @@ void Graph_CreateEdge
 	ASSERT(Graph_GetNode(g, src, &node)  == true);
 	ASSERT(Graph_GetNode(g, dest, &node) == true);
 #endif
+
+	Graph_RepairDanglingEdges(g);
 
 	EdgeID id;
 	AttributeSet *set = DataBlock_AllocateItem(g->edges, &id);
@@ -957,6 +1036,8 @@ void Graph_CreateEdges
 	ASSERT (g != NULL) ;
 	ASSERT (r < Graph_RelationTypeCount (g)) ;
 	ASSERT (r != GRAPH_NO_RELATION && r != GRAPH_UNKNOWN_RELATION) ;
+
+	Graph_RepairDanglingEdges(g);
 
 	if (sets != NULL) {
 		ASSERT (arr_len (edges) == arr_len (sets)) ;
@@ -1044,6 +1125,8 @@ void Graph_DeleteEdges
 	ASSERT (n     > 0) ;
 	ASSERT (g     != NULL) ;
 	ASSERT (edges != NULL) ;
+
+	Graph_MarkEdgeRefsInvalid(g);
 
 	for (uint64_t i = 0; i < n; i++) {
 		Edge *e = edges + i;
