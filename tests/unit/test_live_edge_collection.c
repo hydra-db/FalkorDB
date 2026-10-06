@@ -14,6 +14,12 @@
 #include "src/configuration/config.h"
 pthread_t redis_main_thread_id;
 
+// Graph_New stores this callback. The standalone fixture/donor contains no
+// property values; the full unit-test build uses the production destructor.
+void AttributeSet_Free(AttributeSet *set) {
+	TEST_ASSERT(set == NULL || *set == NULL);
+}
+
 // Standalone runner: retain the normal delta flush threshold without pulling
 // in Redis/module startup. Storage, tensors and all collectors are production C.
 bool Config_Option_get(Config_Option_Field field, ...) {
@@ -27,8 +33,6 @@ bool Config_Option_get(Config_Option_Field field, ...) {
 }
 #endif
 
-static uint64_t sync_calls;
-
 // The fixture deliberately bypasses Graph_DeleteEdges: its tensor still names
 // a freed slot, exactly the inconsistent state observed in production. Keep
 // real DataBlock storage and real scalar/vector Tensor entries in every test.
@@ -39,7 +43,6 @@ static bool synchronize
 	GrB_Index rows,
 	GrB_Index cols
 ) {
-	sync_calls++;
 	return Delta_Matrix_wait(matrix, true) == GrB_SUCCESS;
 }
 
@@ -289,16 +292,29 @@ static void test_healthy_delete_create_keeps_validation_cached(void) {
 		arr_append(g->relations, Tensor_new(16, 16));
 		arr_append(g->stats.edge_count, 0);
 	}
+	// Deletion changes synchronization policies, which requires the real
+	// production callback rather than the fixture's minimal callback.
+	Graph *donor = Graph_New(16, 16);
+	g->SynchronizeMatrix = donor->SynchronizeMatrix;
+	Delta_Matrix_free(&donor->adjacency_matrix);
+	Delta_Matrix_free(&donor->node_labels);
+	Delta_Matrix_free(&donor->_zero_matrix);
+	arr_free(donor->labels);
+	arr_free(donor->relations);
+	GraphStatistics_FreeInternals(&donor->stats);
+	DataBlock_Free(donor->nodes);
+	DataBlock_Free(donor->edges);
+	pthread_rwlock_destroy(&donor->_rwlock);
+	rm_free(donor);
 	Graph_AcquireWriteLock(g);
 	TEST_ASSERT(Graph_RepairDanglingEdges(g) == 2);
 	Edge existing = {.id=2, .src_id=1, .dest_id=2, .relationID=0,
 		.attributes=DataBlock_GetItem(g->edges, 2)};
 	Graph_DeleteEdges(g, &existing, 1, false);
 	TEST_ASSERT(g->edge_refs_validated);
-	uint64_t before = sync_calls;
 	Edge created = {0};
 	Graph_CreateEdge(g, 2, 0, 0, &created);
-	TEST_ASSERT(sync_calls - before < 10);
+	TEST_ASSERT(g->edge_refs_validated);
 	unlock_fixture(g);
 	destroy_fixture(g);
 }
