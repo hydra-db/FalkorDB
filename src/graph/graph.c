@@ -165,8 +165,11 @@ static void _Graph_GetEdgesConnectingNodes
 	while(TensorIterator_next(&it, NULL, NULL, &edge_id, NULL)) {
 		e.id         = edge_id;
 		e.attributes = DataBlock_GetItem(g->edges, edge_id);
-		ASSERT(e.attributes);
-		arr_append(*edges, e);
+		// Old/corrupt tensors can retain references to deleted edge slots.
+		// A missing slot is not an edge; do not expose it to property reads.
+		if(e.attributes != NULL) {
+			arr_append(*edges, e);
+		}
 	}
 }
 
@@ -481,8 +484,11 @@ static void _GetOutgoingNodeEdges
 	TensorIterator_ScanRange(&it, R, src_id, src_id, false);
 	while(TensorIterator_next(&it, NULL, &e.dest_id, &e.id, NULL)) {
 		e.attributes = DataBlock_GetItem(g->edges, e.id);
-		ASSERT(e.attributes);
-		arr_append(*edges, e);
+		// Old/corrupt tensors can retain references to deleted edge slots.
+		// A missing slot is not an edge; do not expose it to property reads.
+		if(e.attributes != NULL) {
+			arr_append(*edges, e);
+		}
 	}
 }
 
@@ -515,8 +521,9 @@ static void _GetIncomingNodeEdges
 		}
 
 		e.attributes = DataBlock_GetItem (g->edges, e.id) ;
-		ASSERT (e.attributes) ;
-		arr_append (*edges, e) ;
+		if (e.attributes != NULL) {
+			arr_append (*edges, e) ;
+		}
 	}
 }
 
@@ -1248,8 +1255,7 @@ bool Graph_GetEdge
 ) {
 	ASSERT(g != NULL);
 	ASSERT(e != NULL);
-	ASSERT(id < g->edges->itemCap);
-
+	// DataBlock_GetItem also rejects out-of-range references from corrupt tensors.
 	e->id         = id;
 	e->attributes = _Graph_GetEntity(g->edges, id);
 

@@ -97,8 +97,9 @@ void Graph_CollectInOutEdges
 						  .attributes = DataBlock_GetItem (g->edges, id)
 				} ;
 
-				ASSERT (e.attributes) ;
-				arr_append (*outgoing, e) ;
+				if (e.attributes != NULL) {
+					arr_append (*outgoing, e) ;
+				}
 			}
 
 			else {
@@ -118,8 +119,9 @@ void Graph_CollectInOutEdges
 							  .attributes = DataBlock_GetItem (g->edges, id)
 					} ;
 
-					ASSERT (e.attributes) ;
-					arr_append (*outgoing, e) ;
+					if (e.attributes != NULL) {
+						arr_append (*outgoing, e) ;
+					}
 
 					// move to the next entry in v
 					info = GxB_Vector_Iterator_next (vec_it) ;
@@ -164,8 +166,9 @@ void Graph_CollectInOutEdges
 						  .attributes = DataBlock_GetItem (g->edges, id)
 				} ;
 
-				ASSERT (e.attributes) ;
-				arr_append (*incoming, e) ;
+				if (e.attributes != NULL) {
+					arr_append (*incoming, e) ;
+				}
 			}
 			
 			else {
@@ -185,8 +188,9 @@ void Graph_CollectInOutEdges
 							  .attributes = DataBlock_GetItem (g->edges, id)
 					} ;
 
-					ASSERT (e.attributes) ;
-					arr_append (*incoming, e) ;
+					if (e.attributes != NULL) {
+						arr_append (*incoming, e) ;
+					}
 
 					// move to the next entry in v
 					info = GxB_Vector_Iterator_next (vec_it) ;
@@ -284,8 +288,9 @@ void Graph_CollectOutgoingEdges
 						  .attributes = DataBlock_GetItem (g->edges, id)
 				} ;
 
-				ASSERT (e.attributes) ;
-				arr_append (*edges, e) ;
+				if (e.attributes != NULL) {
+					arr_append (*edges, e) ;
+				}
 			}
 
 			else {
@@ -305,8 +310,9 @@ void Graph_CollectOutgoingEdges
 							  .attributes = DataBlock_GetItem (g->edges, id)
 					} ;
 
-					ASSERT (e.attributes) ;
-					arr_append (*edges, e) ;
+					if (e.attributes != NULL) {
+						arr_append (*edges, e) ;
+					}
 
 					// move to the next entry in v
 					info = GxB_Vector_Iterator_next (vec_it) ;
@@ -404,8 +410,9 @@ void Graph_CollectIncomingEdges
 						  .attributes = DataBlock_GetItem (g->edges, id)
 				} ;
 
-				ASSERT (e.attributes) ;
-				arr_append (*edges, e) ;
+				if (e.attributes != NULL) {
+					arr_append (*edges, e) ;
+				}
 			}
 			
 			else {
@@ -425,8 +432,9 @@ void Graph_CollectIncomingEdges
 							  .attributes = DataBlock_GetItem (g->edges, id)
 					} ;
 
-					ASSERT (e.attributes) ;
-					arr_append (*edges, e) ;
+					if (e.attributes != NULL) {
+						arr_append (*edges, e) ;
+					}
 
 					// move to the next entry in v
 					info = GxB_Vector_Iterator_next (vec_it) ;

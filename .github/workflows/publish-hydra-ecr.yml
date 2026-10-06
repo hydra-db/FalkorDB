@@ -8,7 +8,7 @@ on:
 env:
   AWS_REGION: us-east-1
   ECR_REPOSITORY: falkordb/falkordb
-  IMAGE_TAG: v4.18.6-hydra7
+  IMAGE_TAG: v4.18.6-hydra8
 
 jobs:
   build-and-push:

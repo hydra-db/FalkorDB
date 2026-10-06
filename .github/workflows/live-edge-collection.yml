@@ -1,0 +1,29 @@
+name: Dangling edge traversal regressions
+
+on:
+  pull_request:
+    branches: [v4.18.6-hydra7]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  live-edge-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        debug: ["0", "1"]
+        sanitizer: ["", address]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Fetch focused test headers
+        run: git submodule update --init --depth 1 deps/rax deps/xxHash
+      - name: Test real tensor and edge storage collectors
+        env:
+          FALKORDB_EDGE_TEST_DEBUG: ${{ matrix.debug }}
+          FALKORDB_EDGE_TEST_SANITIZER: ${{ matrix.sanitizer }}
+          ASAN_OPTIONS: detect_leaks=1
+        run: bash tests/unit/run_live_edge_collection.sh
