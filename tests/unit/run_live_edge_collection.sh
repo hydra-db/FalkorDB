@@ -25,7 +25,7 @@ fi
 if [[ "$(uname -s)" == Darwin ]]; then
     edge_link_flags=(-Wl,-dead_strip)
 else
-    edge_link_flags=(-Wl,--gc-sections)
+    edge_link_flags=(-Wl,--gc-sections -lm -pthread)
 fi
 
 cd "$edge_repo_root"
