@@ -189,6 +189,84 @@ static GrB_Matrix _Decode_GrB_Matrix
 	return A;
 }
 
+// FIX(hydra9): remove the tensor entries a decoded relation matrix carries
+// over from the saving process. M and DP are stored raw, so each entry with
+// the MSB set holds a GrB_Vector address that is meaningless here; the
+// serialized tensors are planted back by _DecodeTensors, and any entry left
+// stale (an encoder before hydra9 could skip a relation's tensors) would be
+// dereferenced by the first tensor iterator -> SIGSEGV in GB_Iterator_attach.
+// returns the number of stale entries that were not pending deletion in DM
+static uint64_t _ScrubStaleTensors
+(
+	Delta_Matrix D  // relation matrix, freshly decoded
+) {
+	ASSERT (D != NULL) ;
+
+	GrB_Info   info ;
+	GrB_Matrix M  = Delta_Matrix_M  (D) ;
+	GrB_Matrix DP = Delta_Matrix_DP (D) ;
+	GrB_Matrix DM = Delta_Matrix_DM (D) ;
+
+	GrB_Index nrows ;
+	GrB_Index ncols ;
+	info = GrB_Matrix_nrows (&nrows, M) ;
+	ASSERT (info == GrB_SUCCESS) ;
+	info = GrB_Matrix_ncols (&ncols, M) ;
+	ASSERT (info == GrB_SUCCESS) ;
+
+	uint64_t   live        = 0 ;
+	GrB_Matrix matrices[2] = {M, DP} ;
+
+	for (int l = 0 ; l < 2 ; l++) {
+		GrB_Matrix A = matrices[l] ;
+
+		// T = A's tensor entries
+		GrB_Matrix T ;
+		info = GrB_Matrix_new (&T, GrB_UINT64, nrows, ncols) ;
+		ASSERT (info == GrB_SUCCESS) ;
+		info = GrB_Matrix_select_UINT64 (T, NULL, NULL, GrB_VALUEGE_UINT64, A,
+				MSB_MASK, NULL) ;
+		ASSERT (info == GrB_SUCCESS) ;
+
+		GrB_Index t_nvals ;
+		info = GrB_Matrix_nvals (&t_nvals, T) ;
+		ASSERT (info == GrB_SUCCESS) ;
+
+		if (t_nvals > 0) {
+			// count the entries not pending deletion, these are the ones the
+			// encoder was supposed to serialize
+			GrB_Matrix TL ;
+			info = GrB_Matrix_new (&TL, GrB_UINT64, nrows, ncols) ;
+			ASSERT (info == GrB_SUCCESS) ;
+			info = GrB_Matrix_select_UINT64 (TL, DM, NULL, GrB_VALUEGE_UINT64,
+					A, MSB_MASK, GrB_DESC_SC) ;
+			ASSERT (info == GrB_SUCCESS) ;
+
+			GrB_Index tl_nvals ;
+			info = GrB_Matrix_nvals (&tl_nvals, TL) ;
+			ASSERT (info == GrB_SUCCESS) ;
+			live += tl_nvals ;
+			GrB_free (&TL) ;
+
+			// drop the tensor entries from A
+			info = GrB_Matrix_select_UINT64 (A, NULL, NULL, GrB_VALUELT_UINT64,
+					A, MSB_MASK, NULL) ;
+			ASSERT (info == GrB_SUCCESS) ;
+
+			// DM marks deletions of M entries; keep DM a subset of M
+			if (A == M) {
+				info = GrB_Matrix_apply (DM, T, NULL, GrB_IDENTITY_BOOL, DM,
+						GrB_DESC_RSC) ;
+				ASSERT (info == GrB_SUCCESS) ;
+			}
+		}
+
+		GrB_free (&T) ;
+	}
+
+	return live ;
+}
+
 // decode matrix
 static void _Decode_Delta_Matrix
 (
@@ -289,10 +367,24 @@ void RdbLoadRelationMatrices_v19
 
 		_Decode_Delta_Matrix(rdb, DR);
 
+		// FIX(hydra9): clear tensor entries holding the saver's addresses
+		uint64_t n_stale = _ScrubStaleTensors (DR) ;
+
 		// decode tensors
 		uint64_t n_elem    = 0;  // number of tensor edges
 		uint64_t n_tensors = 0;  // number of tensors in matrix
 		_DecodeTensors (rdb, DR, &n_tensors, &n_elem) ;
+
+		// a live tensor entry without a serialized tensor: its edge ids were
+		// never written, so the multi-edge is unrecoverable from this file
+		if (n_stale > n_tensors) {
+			RedisModule_Log (NULL, "warning",
+					"hydra9: relation %d: dropped %llu multi-edge entries "
+					"whose tensors were not serialized (pre-hydra9 encoder); "
+					"%llu tensors restored", (int) r,
+					(unsigned long long) (n_stale - n_tensors),
+					(unsigned long long) n_tensors) ;
+		}
 
 		// update graph edge statistics
 		// number of edges of type 'r' equals to:

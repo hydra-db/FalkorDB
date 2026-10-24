@@ -55,17 +55,9 @@ static void _ExtractTensors
 			MSB_MASK, GrB_DESC_SC) ;
 	ASSERT(info == GrB_SUCCESS);
 
-	// expecting at least a single tensor was extracted
-	GrB_Index tm_nvals;
-	GrB_Index tdp_nvals;
-
-	info = GrB_Matrix_nvals (&tm_nvals, *TM) ;
-	ASSERT (info == GrB_SUCCESS) ;
-
-	info = GrB_Matrix_nvals (&tdp_nvals, *TDP) ;
-	ASSERT (info == GrB_SUCCESS) ;
-
-	ASSERT ((tm_nvals + tdp_nvals) > 0) ;
+	// FIX(hydra9): zero extracted tensors is valid; tensors are now extracted
+	// for every relation (see RdbSaveRelationMatrices_v19), not only those the
+	// multi-edge heuristic flags, and _EncodeTensors encodes the empty case
 }
 
 // encode tensors
@@ -392,19 +384,22 @@ void RdbSaveRelationMatrices_v19
 		GrB_Matrix   TM  = NULL ;  // R's M's tensors
 		GrB_Matrix   TDP = NULL ;  // R's DP's tensors
 
-		bool encode_tensors = Graph_RelationshipContainsMultiEdge (g, i) ;
-		if (encode_tensors) {
-			_ExtractTensors (R, &TM, &TDP) ;
-		}
+		// FIX(hydra9): always extract tensors. M is encoded raw, so every
+		// tensor entry in it carries a GrB_Vector address of THIS process;
+		// the decoder only repairs the entries whose tensor is serialized
+		// below. Gating extraction on Graph_RelationshipContainsMultiEdge
+		// (nvals(R) != edge count, a heuristic that drifts with stale or
+		// deleted-edge stats) skipped real tensors, leaving dangling pointers
+		// in the RDB that SIGSEGV in GB_Iterator_attach on load or on the
+		// first traversal. The stream format is unchanged.
+		_ExtractTensors (R, &TM, &TDP) ;
 
 		_Encode_Delta_Matrix (rdb, R, reload) ;
 
 		_EncodeTensors (rdb, TM, TDP) ;
 
-		if (encode_tensors) {
-			GrB_free (&TM) ;
-			GrB_free (&TDP) ;
-		}
+		GrB_free (&TM) ;
+		GrB_free (&TDP) ;
 	}
 }
 
