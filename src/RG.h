@@ -38,7 +38,7 @@
 // #include "RG.h"
 
 // to turn on Debug globaly, uncomment this line:
-#define RG_DEBUG  // hydra9-debug: assertions ON to localize the GB_Iterator_attach SIGSEGV
+#define RG_DEBUG 1  // hydra9-debug: assertions ON to localize the GB_Iterator_attach SIGSEGV
 
 //------------------------------------------------------------------------------
 // debugging definitions

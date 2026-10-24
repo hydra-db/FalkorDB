@@ -68,6 +68,18 @@ static inline void _init_iter
 
 	*depleted = true ; // default
 
+	// hydra9-debug: validate the GraphBLAS matrix before attaching; log only
+	// when it fails the check (a garbage header would crash inside the check,
+	// right after the populate log line, which is equally conclusive)
+	GrB_Info hydra9_chk = GxB_Matrix_fprint (m, "hydra9", GxB_SILENT, NULL) ;
+	if (hydra9_chk != GrB_SUCCESS) {
+		fprintf (stderr, "hydra9-debug: _init_iter INVALID matrix m=%p info=%d "
+				"min_row=%llu max_row=%llu\n", (void *) m, (int) hydra9_chk,
+				(unsigned long long) min_row, (unsigned long long) max_row) ;
+		GxB_Matrix_fprint (m, "hydra9-invalid", GxB_SHORT, stderr) ;
+		fflush (stderr) ;
+	}
+
 	GrB_OK (GxB_rowIterator_attach (it, m, NULL)) ;
 	_set_iter_range (it, min_row, max_row, depleted) ;
 }

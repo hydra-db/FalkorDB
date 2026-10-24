@@ -49,8 +49,18 @@ static void _Index_PopulateNodeIndex
 		// reset number of indexed nodes in batch
 		indexed = 0;
 
+		// hydra9-debug: is the index's label id inside the graph's label range?
+		fprintf(stderr, "hydra9-debug: populate NODE index label_id=%d "
+				"label_count=%d required_dim=%llu row=%llu\n",
+				(int)Index_GetLabelID(idx), Graph_LabelTypeCount(g),
+				(unsigned long long)Graph_RequiredMatrixDim(g),
+				(unsigned long long)rowIdx);
+		fflush(stderr);
+
 		// fetch label matrix
 		const Delta_Matrix m = Graph_GetLabelMatrix(g, Index_GetLabelID(idx));
+		fprintf(stderr, "hydra9-debug: label matrix fetched m=%p\n", (void *)m);
+		fflush(stderr);
 		ASSERT(m != NULL);
 
 		//----------------------------------------------------------------------
@@ -145,8 +155,18 @@ static void _Index_PopulateEdgeIndex
 		// reset number of indexed edges in batch
 		indexed = 0;
 
+		// hydra9-debug: is the index's relation id inside the graph's range?
+		fprintf(stderr, "hydra9-debug: populate EDGE index rel_id=%d "
+				"rel_count=%d required_dim=%llu src=%llu\n",
+				(int)Index_GetLabelID(idx), Graph_RelationTypeCount(g),
+				(unsigned long long)Graph_RequiredMatrixDim(g),
+				(unsigned long long)src_id);
+		fflush(stderr);
+
 		// fetch relation matrix
 		Tensor R = Graph_GetRelationMatrix(g, Index_GetLabelID(idx), false);
+		fprintf(stderr, "hydra9-debug: relation tensor fetched R=%p\n", (void *)R);
+		fflush(stderr);
 
 		//----------------------------------------------------------------------
 		// resume scanning from previous row/col indices
